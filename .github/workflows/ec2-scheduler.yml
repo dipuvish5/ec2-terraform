@@ -1,0 +1,88 @@
+name: EC2 Scheduler
+
+on:
+  schedule:
+    - cron: "0 3 * * *"  # 3 AM UTC → 9 AM IST (Start Instance)
+    - cron: "30 14 * * *" # 2:30 PM UTC → 8 PM IST (Stop Instance)
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  start-ec2:
+    if: github.event.schedule == '0 3 * * *'  # Runs only for 9 AM schedule
+    name: Start EC2 Instance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region: us-east-1
+
+      - name: Start EC2
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
+          aws ec2 start-instances --instance-ids $INSTANCE_ID
+          echo "Started EC2 Instance: $INSTANCE_ID"
+
+  stop-ec2:
+    if: github.event.schedule == '30 14 * * *'  # Runs only for 8 PM schedule
+    name: Stop EC2 Instance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          region: us-east-1
+
+      - name: Stop EC2 & Release EIP
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
+          ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?InstanceId=='$INSTANCE_ID'].AllocationId" --output text)
+
+          aws ec2 stop-instances --instance-ids $INSTANCE_ID
+          echo "Stopped EC2 Instance: $INSTANCE_ID"
+
+          aws ec2 release-address --allocation-id $ALLOCATION_ID
+          echo "Released EIP: $ALLOCATION_ID"
+
+      - name: Assign New EIP & Update Route 53
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
+          NEW_EIP=$(aws ec2 allocate-address --domain vpc --query PublicIp --output text)
+          NEW_ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?PublicIp=='$NEW_EIP'].AllocationId" --output text)
+
+          aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id $NEW_ALLOCATION_ID
+          echo "Assigned New EIP: $NEW_EIP to EC2 Instance: $INSTANCE_ID"
+
+          aws route53 change-resource-record-sets --hosted-zone-id Z123456789ABCDEFG --change-batch '
+          {
+            "Changes": [{
+              "Action": "UPSERT",
+              "ResourceRecordSet": {
+                "Name": "yourdomain.com",
+                "Type": "A",
+                "TTL": 300,
+                "ResourceRecords": [{"Value": "'$NEW_EIP'"}]
+              }
+            }]
+          }'
+          echo "Updated Route 53 with new EIP: $NEW_EIP"
