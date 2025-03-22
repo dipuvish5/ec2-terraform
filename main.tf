@@ -5,7 +5,7 @@ provider "aws" {
 resource "aws_instance" "my_instance" {
   ami           = "ami-0846b753e2af0da6e"  # Change to your region's AMI
   instance_type = "t4g.nano"
-  key_name      = "your-key-pair"          # Replace with your key pair
+  key_name      = "Terraform-On-Github"  # Only the key name is required
   tags = {
     Name = "Soln-Arch"
   }
