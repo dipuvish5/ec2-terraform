@@ -88,27 +88,52 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1  # Explicitly set region
 
+      # - name: Stop EC2 & Release EIP
+      #   run: |
+      #     INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
+      #     if [[ -z "$INSTANCE_ID" ]]; then
+      #       echo "No matching instance found. Exiting..."
+      #       exit 1
+      #     fi
+      #     CURRENT_STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query "Reservations[].Instances[].State.Name" --output text)
+      #     echo "Current EC2 State: $CURRENT_STATE"
+
+      #     if [[ "$CURRENT_STATE" != "stopped" ]]; then
+      #       aws ec2 stop-instances --instance-ids $INSTANCE_ID
+      #       echo "Stopped EC2 Instance: $INSTANCE_ID"
+      #     else
+      #       echo "EC2 Instance is already stopped."
+      #     fi
+
+      #     ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?InstanceId=='$INSTANCE_ID'].AllocationId" --output text)
+      #     if [[ -n "$ALLOCATION_ID" ]]; then
+      #       aws ec2 release-address --allocation-id $ALLOCATION_ID
+      #       echo "Released EIP: $ALLOCATION_ID"
+      #     else
+      #       echo "No EIP associated with instance."
+      #     fi
+
       - name: Stop EC2 & Release EIP
         run: |
           INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
-          if [[ -z "$INSTANCE_ID" ]]; then
-            echo "No matching instance found. Exiting..."
-            exit 1
-          fi
-          CURRENT_STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query "Reservations[].Instances[].State.Name" --output text)
-          echo "Current EC2 State: $CURRENT_STATE"
+          ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?AssociationId!=null].AllocationId" --output text)
+          ASSOCIATION_ID=$(aws ec2 describe-addresses --query "Addresses[?InstanceId=='$INSTANCE_ID'].AssociationId" --output text)
 
-          if [[ "$CURRENT_STATE" != "stopped" ]]; then
-            aws ec2 stop-instances --instance-ids $INSTANCE_ID
-            echo "Stopped EC2 Instance: $INSTANCE_ID"
-          else
-            echo "EC2 Instance is already stopped."
+          echo "Current EC2 State:"
+          aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[].Instances[].State.Name"
+
+          echo "Stopping EC2 Instance: $INSTANCE_ID"
+          aws ec2 stop-instances --instance-ids $INSTANCE_ID
+
+          if [ -n "$ASSOCIATION_ID" ]; then
+            echo "Disassociating Elastic IP..."
+            aws ec2 disassociate-address --association-id $ASSOCIATION_ID
           fi
 
-          ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?InstanceId=='$INSTANCE_ID'].AllocationId" --output text)
-          if [[ -n "$ALLOCATION_ID" ]]; then
+          if [ -n "$ALLOCATION_ID" ]; then
+            echo "Releasing Elastic IP..."
             aws ec2 release-address --allocation-id $ALLOCATION_ID
-            echo "Released EIP: $ALLOCATION_ID"
-          else
-            echo "No EIP associated with instance."
           fi
+
+          echo "Successfully Stopped EC2 and Released EIP"
+
