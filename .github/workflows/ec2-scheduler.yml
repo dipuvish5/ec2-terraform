@@ -54,7 +54,7 @@ jobs:
           aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id $NEW_ALLOCATION_ID
           echo "Assigned New EIP: $NEW_EIP to EC2 Instance: $INSTANCE_ID"
 
-          aws route53 change-resource-record-sets --hosted-zone-id Z123456789ABCDEFG --change-batch '
+          aws route53 change-resource-record-sets --hosted-zone-id Z0358020WBTRB1CMQU2V --change-batch '
           {
             "Changes": [{
               "Action": "UPSERT",
