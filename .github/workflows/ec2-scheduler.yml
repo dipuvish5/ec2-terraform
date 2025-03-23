@@ -1,9 +1,9 @@
 name: EC2 Scheduler
 
 on:
-  schedule:
-    - cron: "5 5 * * *"  # 3 AM UTC → 9 AM IST (Start Instance)
-    - cron: "30 14 * * *" # 2:30 PM UTC → 8 PM IST (Stop Instance)
+  # schedule:
+  #   - cron: "5 5 * * *"  # 3 AM UTC → 9 AM IST (Start Instance)
+  #   - cron: "30 14 * * *" # 2:30 PM UTC → 8 PM IST (Stop Instance)
   workflow_dispatch:  # Allows manual trigger
 
 jobs:
@@ -60,36 +60,36 @@ jobs:
           }'
           echo "Updated Route 53 with new EIP: $NEW_EIP"
 
-  stop-ec2:
-    if: github.event.schedule == '30 14 * * *'  # Runs only for 8 PM schedule
-    name: Stop EC2 Instance
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+  # stop-ec2:
+  #   if: github.event.schedule == '30 14 * * *'  # Runs only for 8 PM schedule
+  #   name: Stop EC2 Instance
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout Code
+  #       uses: actions/checkout@v4
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.6.0
+  #     - name: Setup Terraform
+  #       uses: hashicorp/setup-terraform@v3
+  #       with:
+  #         terraform_version: 1.6.0
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
+  #     - name: Configure AWS Credentials
+  #       uses: aws-actions/configure-aws-credentials@v2
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: ap-south-1
 
-      - name: Stop EC2 & Release EIP
-        run: |
-          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
-          ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?InstanceId=='$INSTANCE_ID'].AllocationId" --output text)
-          CURRENT_RUNNING_STATE=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].State.Name" --output text)
+  #     - name: Stop EC2 & Release EIP
+  #       run: |
+  #         INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
+  #         ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?InstanceId=='$INSTANCE_ID'].AllocationId" --output text)
+  #         CURRENT_RUNNING_STATE=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].State.Name" --output text)
           
-          echo "CURRENT RUNNING STATE is: $CURRENT_RUNNING_STATE"
+  #         echo "CURRENT RUNNING STATE is: $CURRENT_RUNNING_STATE"
           
-          aws ec2 stop-instances --instance-ids $INSTANCE_ID
-          echo "Stopped EC2 Instance: $INSTANCE_ID"
+  #         aws ec2 stop-instances --instance-ids $INSTANCE_ID
+  #         echo "Stopped EC2 Instance: $INSTANCE_ID"
 
-          aws ec2 release-address --allocation-id $ALLOCATION_ID
-          echo "Released EIP: $ALLOCATION_ID"
+  #         aws ec2 release-address --allocation-id $ALLOCATION_ID
+  #         echo "Released EIP: $ALLOCATION_ID"
