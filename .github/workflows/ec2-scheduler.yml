@@ -29,7 +29,7 @@ jobs:
 
       - name: Start EC2
         run: |
-          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
           aws ec2 start-instances --instance-ids $INSTANCE_ID
           echo "Started EC2 Instance: $INSTANCE_ID"
 
@@ -55,9 +55,12 @@ jobs:
 
       - name: Stop EC2 & Release EIP
         run: |
-          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
           ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?InstanceId=='$INSTANCE_ID'].AllocationId" --output text)
-
+          CURRENT_RUNNING_STATE=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].State.Name" --output text)
+          
+          echo "CURRENT RUNNING STATE is: $CURRENT_RUNNING_STATE"
+          
           aws ec2 stop-instances --instance-ids $INSTANCE_ID
           echo "Stopped EC2 Instance: $INSTANCE_ID"
 
@@ -67,6 +70,10 @@ jobs:
       - name: Assign New EIP & Update Route 53
         run: |
           INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
+
+          CURRENT_RUNNING_STATE=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].State.Name" --output text)
+          echo "CURRENT RUNNING STATE is: $CURRENT_RUNNING_STATE"
+          
           NEW_EIP=$(aws ec2 allocate-address --domain vpc --query PublicIp --output text)
           NEW_ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?PublicIp=='$NEW_EIP'].AllocationId" --output text)
 
@@ -78,9 +85,9 @@ jobs:
             "Changes": [{
               "Action": "UPSERT",
               "ResourceRecordSet": {
-                "Name": "yourdomain.com",
+                "Name": "api-java.deepakvishwakarma.com",
                 "Type": "A",
-                "TTL": 300,
+                "TTL": 60,
                 "ResourceRecords": [{"Value": "'$NEW_EIP'"}]
               }
             }]
