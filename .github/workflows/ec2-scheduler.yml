@@ -1,14 +1,14 @@
 name: EC2 Scheduler
 
 on:
-  # schedule:
-  #   - cron: "5 5 * * *"  # 3 AM UTC → 9 AM IST (Start Instance)
-  #   - cron: "30 14 * * *" # 2:30 PM UTC → 8 PM IST (Stop Instance)
+  schedule:
+    - cron: "3 3 * * *"  # Corrected for 9 AM IST (Start Instance)
+    - cron: "30 14 * * *" # Corrected for 8 PM IST (Stop Instance)
   workflow_dispatch:  # Allows manual trigger
 
 jobs:
   start-ec2:
-    if: github.event.schedule == '0 3 * * *'  # Runs only for 9 AM schedule
+    if: github.event_name == 'schedule'  # Corrected condition
     name: Start EC2 Instance
     runs-on: ubuntu-latest
     steps:
@@ -25,21 +25,28 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
+          aws-region: ap-south-1  # Explicitly set region
 
       - name: Start EC2
         run: |
           INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
-          CURRENT_RUNNING_STATE=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].State.Name" --output text)
-          
-          echo "CURRENT RUNNING STATE is: $CURRENT_RUNNING_STATE"
-          aws ec2 start-instances --instance-ids $INSTANCE_ID
-          echo "Started EC2 Instance: $INSTANCE_ID"
+          if [[ -z "$INSTANCE_ID" ]]; then
+            echo "No matching instance found. Exiting..."
+            exit 1
+          fi
+          CURRENT_STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query "Reservations[].Instances[].State.Name" --output text)
+          echo "Current EC2 State: $CURRENT_STATE"
+
+          if [[ "$CURRENT_STATE" != "running" ]]; then
+            aws ec2 start-instances --instance-ids $INSTANCE_ID
+            echo "Started EC2 Instance: $INSTANCE_ID"
+          else
+            echo "EC2 Instance is already running."
+          fi
 
       - name: Assign New EIP & Update Route 53
         run: |
           INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
-
           NEW_EIP=$(aws ec2 allocate-address --domain vpc --query PublicIp --output text)
           NEW_ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?PublicIp=='$NEW_EIP'].AllocationId" --output text)
 
@@ -60,36 +67,47 @@ jobs:
           }'
           echo "Updated Route 53 with new EIP: $NEW_EIP"
 
-  # stop-ec2:
-  #   if: github.event.schedule == '30 14 * * *'  # Runs only for 8 PM schedule
-  #   name: Stop EC2 Instance
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout Code
-  #       uses: actions/checkout@v4
+  stop-ec2:
+    if: github.event_name == 'schedule'  # Corrected condition
+    name: Stop EC2 Instance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-  #     - name: Setup Terraform
-  #       uses: hashicorp/setup-terraform@v3
-  #       with:
-  #         terraform_version: 1.6.0
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
 
-  #     - name: Configure AWS Credentials
-  #       uses: aws-actions/configure-aws-credentials@v2
-  #       with:
-  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  #         aws-region: ap-south-1
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1  # Explicitly set region
 
-  #     - name: Stop EC2 & Release EIP
-  #       run: |
-  #         INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
-  #         ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?InstanceId=='$INSTANCE_ID'].AllocationId" --output text)
-  #         CURRENT_RUNNING_STATE=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].State.Name" --output text)
-          
-  #         echo "CURRENT RUNNING STATE is: $CURRENT_RUNNING_STATE"
-          
-  #         aws ec2 stop-instances --instance-ids $INSTANCE_ID
-  #         echo "Stopped EC2 Instance: $INSTANCE_ID"
+      - name: Stop EC2 & Release EIP
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
+          if [[ -z "$INSTANCE_ID" ]]; then
+            echo "No matching instance found. Exiting..."
+            exit 1
+          fi
+          CURRENT_STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query "Reservations[].Instances[].State.Name" --output text)
+          echo "Current EC2 State: $CURRENT_STATE"
 
-  #         aws ec2 release-address --allocation-id $ALLOCATION_ID
-  #         echo "Released EIP: $ALLOCATION_ID"
+          if [[ "$CURRENT_STATE" != "stopped" ]]; then
+            aws ec2 stop-instances --instance-ids $INSTANCE_ID
+            echo "Stopped EC2 Instance: $INSTANCE_ID"
+          else
+            echo "EC2 Instance is already stopped."
+          fi
+
+          ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?InstanceId=='$INSTANCE_ID'].AllocationId" --output text)
+          if [[ -n "$ALLOCATION_ID" ]]; then
+            aws ec2 release-address --allocation-id $ALLOCATION_ID
+            echo "Released EIP: $ALLOCATION_ID"
+          else
+            echo "No EIP associated with instance."
+          fi
