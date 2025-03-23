@@ -8,7 +8,8 @@ on:
 
 jobs:
   start-ec2:
-    if: github.event_name == 'schedule'  # Corrected condition
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'   # Corrected condition
+
     name: Start EC2 Instance
     runs-on: ubuntu-latest
     steps:
@@ -68,7 +69,7 @@ jobs:
           echo "Updated Route 53 with new EIP: $NEW_EIP"
 
   stop-ec2:
-    if: github.event_name == 'schedule'  # Corrected condition
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'   # Corrected condition
     name: Stop EC2 Instance
     runs-on: ubuntu-latest
     steps:
