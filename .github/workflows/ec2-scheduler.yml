@@ -30,8 +30,35 @@ jobs:
       - name: Start EC2
         run: |
           INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
+          CURRENT_RUNNING_STATE=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].State.Name" --output text)
+          
+          echo "CURRENT RUNNING STATE is: $CURRENT_RUNNING_STATE"
           aws ec2 start-instances --instance-ids $INSTANCE_ID
           echo "Started EC2 Instance: $INSTANCE_ID"
+
+      - name: Assign New EIP & Update Route 53
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
+
+          NEW_EIP=$(aws ec2 allocate-address --domain vpc --query PublicIp --output text)
+          NEW_ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?PublicIp=='$NEW_EIP'].AllocationId" --output text)
+
+          aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id $NEW_ALLOCATION_ID
+          echo "Assigned New EIP: $NEW_EIP to EC2 Instance: $INSTANCE_ID"
+
+          aws route53 change-resource-record-sets --hosted-zone-id Z123456789ABCDEFG --change-batch '
+          {
+            "Changes": [{
+              "Action": "UPSERT",
+              "ResourceRecordSet": {
+                "Name": "api-java.deepakvishwakarma.com",
+                "Type": "A",
+                "TTL": 60,
+                "ResourceRecords": [{"Value": "'$NEW_EIP'"}]
+              }
+            }]
+          }'
+          echo "Updated Route 53 with new EIP: $NEW_EIP"
 
   stop-ec2:
     if: github.event.schedule == '30 14 * * *'  # Runs only for 8 PM schedule
@@ -66,30 +93,3 @@ jobs:
 
           aws ec2 release-address --allocation-id $ALLOCATION_ID
           echo "Released EIP: $ALLOCATION_ID"
-
-      - name: Assign New EIP & Update Route 53
-        run: |
-          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
-
-          CURRENT_RUNNING_STATE=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].State.Name" --output text)
-          echo "CURRENT RUNNING STATE is: $CURRENT_RUNNING_STATE"
-          
-          NEW_EIP=$(aws ec2 allocate-address --domain vpc --query PublicIp --output text)
-          NEW_ALLOCATION_ID=$(aws ec2 describe-addresses --query "Addresses[?PublicIp=='$NEW_EIP'].AllocationId" --output text)
-
-          aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id $NEW_ALLOCATION_ID
-          echo "Assigned New EIP: $NEW_EIP to EC2 Instance: $INSTANCE_ID"
-
-          aws route53 change-resource-record-sets --hosted-zone-id Z123456789ABCDEFG --change-batch '
-          {
-            "Changes": [{
-              "Action": "UPSERT",
-              "ResourceRecordSet": {
-                "Name": "api-java.deepakvishwakarma.com",
-                "Type": "A",
-                "TTL": 60,
-                "ResourceRecords": [{"Value": "'$NEW_EIP'"}]
-              }
-            }]
-          }'
-          echo "Updated Route 53 with new EIP: $NEW_EIP"
