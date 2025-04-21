@@ -1,0 +1,69 @@
+name: EC2 Scheduler
+
+on:
+  schedule:
+    - cron: "30 8 * * *"  # Corrected for 2 PM IST (Start Instance)
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  start-ec2:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    name: Start EC2 Instance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1  # Explicitly set region
+
+      - name: Start EC2 Scheduler & Update Route 53
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Scheduled-Solution-Arch-EC2" --query "Reservations[].Instances[].InstanceId" --output text)
+          if [[ -z "$INSTANCE_ID" ]]; then
+            echo "No matching instance found. Exiting..."
+            exit 1
+          fi
+          CURRENT_STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query "Reservations[].Instances[].State.Name" --output text)
+          echo "Current EC2 State: $CURRENT_STATE"
+
+          if [[ "$CURRENT_STATE" != "running" ]]; then
+            echo "Started EC2 Instance: $INSTANCE_ID"
+            aws ec2 start-instances --instance-ids $INSTANCE_ID
+            
+            echo "Waiting for instance to be in 'running' state..."
+            aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+          else
+            echo "EC2 Instance is already running."
+          fi
+
+      - name: Assign New EIP & Update Route 53
+        run: |
+          echo "Fetching public IP..."
+          PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[].Instances[].PublicIpAddress" --output text)
+          echo "Public IP: $PUBLIC_IP"
+
+          echo "Updating Route 53 record..."
+          aws route53 change-resource-record-sets --hosted-zone-id Z0358020WBTRB1CMQU2V --change-batch '
+          {
+            "Changes": [{
+              "Action": "UPSERT",
+              "ResourceRecordSet": {
+                "Name": "api-java.deepakvishwakarma.com",
+                "Type": "A",
+                "TTL": 60,
+                "ResourceRecords": [{"Value": "'$PUBLIC_IP'"}]
+              }
+            }]
+          }'
+          echo "DNS record updated successfully : $PUBLIC_IP"
