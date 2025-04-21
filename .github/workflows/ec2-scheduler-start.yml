@@ -34,24 +34,40 @@ jobs:
             echo "No matching instance found. Exiting..."
             exit 1
           fi
+
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV  # <-- Share across steps
+          
           CURRENT_STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query "Reservations[].Instances[].State.Name" --output text)
           echo "Current EC2 State: $CURRENT_STATE"
 
-          if [[ "$CURRENT_STATE" != "running" ]]; then
-            echo "Started EC2 Instance: $INSTANCE_ID"
-            aws ec2 start-instances --instance-ids $INSTANCE_ID
+          if [[ "$CURRENT_STATE" == "stopping" ]]; then
+            echo "Waiting for instance to fully stop..."
+            aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID"
+            CURRENT_STATE="stopped"
+          fi
+          
+          if [[ "$CURRENT_STATE" == "stopped" ]]; then
+            echo "Starting EC2 Instance: $INSTANCE_ID"
+            aws ec2 start-instances --instance-ids "$INSTANCE_ID"
             
             echo "Waiting for instance to be in 'running' state..."
-            aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+            aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
           else
-            echo "EC2 Instance is already running."
+            echo "EC2 Instance is already running or not in a stoppable state."
           fi
+          
 
       - name: Assign New EIP & Update Route 53
         run: |
           echo "Fetching public IP..."
           PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[].Instances[].PublicIpAddress" --output text)
-          echo "Public IP: $PUBLIC_IP"
+          
+          if [[ -z "$PUBLIC_IP" || "$PUBLIC_IP" == "None" ]]; then
+            echo "Public IP not found. Exiting..."
+            exit 1
+          else
+            echo "Public IP: $PUBLIC_IP"
+          fi
 
           echo "Updating Route 53 record..."
           aws route53 change-resource-record-sets --hosted-zone-id Z0358020WBTRB1CMQU2V --change-batch '
