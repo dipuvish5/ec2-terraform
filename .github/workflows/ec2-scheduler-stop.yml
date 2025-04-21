@@ -1,4 +1,4 @@
-name: EC2 Scheduler
+name: Scheduler - Stop EC2
 
 on:
   schedule:
