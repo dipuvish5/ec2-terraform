@@ -1,4 +1,4 @@
-name: EC2 Scheduler
+name: Scheduler - Start EC2
 
 on:
   schedule:
