@@ -83,3 +83,31 @@ jobs:
             }]
           }'
           echo "DNS record updated successfully : $PUBLIC_IP"
+
+
+      - name: Run Docker command to start the spring boot service
+        run: |
+          echo "Triggering Docker Command"
+          docker --version
+          
+          docker images
+          docker ps -a
+          
+          echo "Removing existing container if it exists..."
+          docker rm -f myapp || echo "No container named 'myapp' to remove"
+
+          echo "Starting new container..."
+          docker run -d --platform linux/arm64 --name myapp -p 80:8080 dipuvish5/solution-architecture:latest
+          
+
+
+
+
+
+
+
+
+
+
+
+          
