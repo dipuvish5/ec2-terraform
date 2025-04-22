@@ -8,6 +8,6 @@ resource "aws_instance" "my_instance" {
   key_name      = "Terraform-On-Github"  # Only the key name is required
   associate_public_ip_address = true  # THIS is required
   tags = {
-    Name = "Soln-Arch"
+    Name = "Scheduled-Solution-Arch-EC2"
   }
 }
