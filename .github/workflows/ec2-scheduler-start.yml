@@ -90,14 +90,23 @@ jobs:
           echo "Triggering Docker Command"
           docker --version
           
-          docker images
+          echo "Container Status:"
           docker ps -a
+      
+          echo "Logs from the container:"
+          docker logs myapp
           
           echo "Removing existing container if it exists..."
           docker rm -f myapp || echo "No container named 'myapp' to remove"
 
           echo "Starting new container..."
           docker run -d --platform linux/arm64 --name myapp -p 80:8080 dipuvish5/solution-architecture:latest
+
+          echo "Container Status:"
+          docker ps -a
+      
+          echo "Logs from the container:"
+          docker logs myapp
           
 
 
