@@ -57,7 +57,7 @@ jobs:
           fi
           
 
-      - name: Assign New EIP & Update Route 53
+      - name: Fetch assigned public IP & update Route 53
         run: |
           echo "Fetching public IP..."
           PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query "Reservations[].Instances[].PublicIpAddress" --output text)
@@ -101,6 +101,9 @@ jobs:
 
           echo "Starting new container..."
           docker run -d --platform linux/arm64 --name myapp -p 80:8080 dipuvish5/solution-architecture:latest
+
+          echo "Waiting a bit for the container to initialize for 5 seconds..."
+          sleep 5
 
           echo "Container Status:"
           docker ps -a
